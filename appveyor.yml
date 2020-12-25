@@ -8,7 +8,10 @@ init:
 build_script:
 - pwsh: >-
     Set-BuildEnvironment
+
     $Version = Get-NextNugetPackageVersion -Name $env:BHProjectName
+
     Update-Metadata -Path $env:BHPSModuleManifest -PropertyName ModuleVersion -Value $Version
+
 deploy_script:
-- pwsh: Publish-Module -Path $env:APPVEYOR_BUILD_FOLDER -Repository "https://github.com/Still34/PSLive-DL" -NuGetApiKey $env:NuGetAPIKey
+- pwsh: Publish-Module -Path $env:APPVEYOR_BUILD_FOLDER -NuGetApiKey $env:NuGetAPIKey
