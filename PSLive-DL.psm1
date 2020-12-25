@@ -1,4 +1,20 @@
 #Requires -Version 5
+<#
+.SYNOPSIS
+    Initiates a watchdog to monitor the desired channel.
+.DESCRIPTION
+    Initiates a watchdog service to automatically detect whenever the desired channel goes live. When the channel is live, the function will automatically begin recording the stream; when the channel has stopped streaming, the function will return to its monitoring state, thus repeating the cycle.
+.PARAMETER Url
+    The channel to monitor (e.g., "twitch.tv/DarkViperAU", "https://www.youtube.com/c/dhctv", "https://www.youtube.com/watch?v=I2PF1SCi9qY")
+.PARAMETER Interval
+    The interval in seconds to repeat the monitoring process.
+.PARAMETER Format
+    The format to record the stream in.
+.PARAMETER CookieJar
+    The location to a cookies.txt file. This is required if the channel is locked behind a member pay-wall and that your account has access to said channel. The cookies.txt file must comply to the specs listed here: https://docs.funnelback.com/collections/collection-types/web/web-crawler-settings/cookies_txt.html. The cookies.txt must also each be delimited by a tab character ("\t"). Firefox users can use the extension here to easily generate a cookies.txt for use of this module: https://addons.mozilla.org/ja/firefox/addon/cookies-txt/
+.OUTPUTS
+    None
+#>
 function Invoke-PSLiveWatchdog {
     [CmdletBinding()]
     param (
@@ -35,6 +51,132 @@ function Invoke-PSLiveWatchdog {
     
     end {
         
+    }
+}
+function Update-EnvVars {
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine) + ";" + [System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::User) 
+}
+function Install-PSLiveDependencies {
+    [CmdletBinding()]
+    param (
+        
+    )
+    
+    begin {
+        $installSL = Get-Streamlink -ErrorAction SilentlyContinue
+        $installFFMPEG = Get-FFMpeg -ErrorAction SilentlyContinue
+        $installSL = [string]::IsNullOrEmpty($installSL)
+        Write-Verbose "Install streamlink: $installSL"
+        $installFFMPEG = [string]::IsNullOrEmpty($installFFMPEG)
+        Write-Verbose "Install ffmpeg: $installFFMPEG"
+    }
+    
+    process {
+        if (-not ($installSL -or $installFFMPEG)) {
+            Write-Host "Dependencies met. No installation required."
+            return
+        }
+        $activity = "Installing dependencies..."
+        if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+            if ($installFFMPEG) {
+                Write-Progress -Activity $activity -Status "Installing ffmpeg..." -PercentComplete 45
+                if ($installSL) {
+                    $title = 'Install ffmpeg?'
+                    $message = 'ffmpeg is available as an optional install in the streamlink installer. If you do not plan on using ffmpeg outside of streamlink, you may skip this dependency.'
+                    $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", 'Yes'
+                    $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", 'No'
+                    $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+                    $ffmpegPrompt = $host.ui.PromptForChoice($title, $message, $options, 0) 
+                }
+                if ($null -eq $ffmpegPrompt -or $ffmpegPrompt -eq 0) {
+                    Deploy-FFMpeg
+                }
+                else {
+                    Write-Warning "ffmpeg installation aborted."
+                }
+            }
+            if ($installSL) {
+                Write-Progress -Activity $activity -Status "Installing streamlink..." -PercentComplete 90
+                Deploy-Streamlink
+            }
+        }
+        else {
+            Write-Error "Automatic dependency installation is only supported on Windows for now. Please install ffmpeg and streamlink separetely!"
+        }
+        Write-Progress -Activity $activity -Completed
+    }
+    
+    end {
+        Write-Host "Dependency setup complete!" -ForegroundColor Green
+    }
+}
+function New-PSLiveBin {
+    $targetPath = "$env:USERPROFILE\.pslive\bin"
+    if ($targetPath) {
+        return (Get-Item $targetPath)
+    }
+    $binPath = New-Item -ItemType Directory -Path $targetPath -Force
+    $userEnvVars = [System.Environment]::GetEnvironmentVariable("PATH", [System.EnvironmentVariableTarget]::User)
+    if ($userEnvVars -notcontains $binPath.FullName) {
+        [System.Environment]::SetEnvironmentVariable("PATH", $userEnvVars + ";$binPath", [System.EnvironmentVariableTarget]::User)
+        Update-EnvVars
+    }
+    return $binPath
+}
+function Deploy-Streamlink {
+    $iwr = Invoke-WebRequest "https://api.github.com/repos/streamlink/streamlink/releases" -UseBasicParsing
+    if ($iwr.StatusCode -eq 200) {
+        $response = (($iwr).Content | ConvertFrom-Json) | 
+        Select-Object -First 1 | 
+        Select-Object -exp assets | 
+        Where-Object { 
+            $_.Name -match ".*\.exe"
+        }
+        if (($response | Measure-Object).Count -eq 1) {
+            $fileName = [System.IO.Path]::GetFileName($response.browser_download_url)
+            $slTempFile = Join-Path ([System.IO.Path]::GetTempPath()) $fileName
+            Invoke-WebRequest -Uri $response.browser_download_url -OutFile $slTempFile -UseBasicParsing
+            Start-Process $slTempFile -Wait
+            Update-EnvVars
+            Write-Host ("Installed " + (. streamlink --version) + "!") -ForegroundColor Green
+        }
+        else {
+            throw [System.InvalidOperationException]::new("Failed to obtain the URL for streamlink.")
+        }
+    }
+    else {
+        throw [System.Net.WebException]::new("GitHub cannot be reached at the moment.")
+    }
+}
+function Deploy-FFMpeg {
+    $iwr = Invoke-WebRequest "https://api.github.com/repos/btbn/ffmpeg-builds/releases" -UseBasicParsing
+    $binPath = New-PSLiveBin
+    if ($iwr.StatusCode -eq 200) {
+        $response = (($iwr).Content | ConvertFrom-Json) | 
+        Select-Object -First 1 | 
+        Select-Object -exp assets | 
+        Where-Object { 
+            $_.Name -match "n[\d]\.[\d]\.[\d]-.*-gpl.*shared.*\.zip"
+        }
+        if (($response | Measure-Object).Count -eq 1) {
+            $ffmpegTempFile = Join-Path ([System.IO.Path]::GetTempPath()) "ffmpeg-temp.zip"
+            Invoke-WebRequest -Uri $response.browser_download_url -OutFile $ffmpegTempFile -UseBasicParsing
+            Expand-Archive $ffmpegTempFile -DestinationPath $binPath -Force
+            Get-ChildItem -Path $binPath -Recurse -Filter "bin" | 
+            Select-Object -first 1 | 
+            Get-ChildItem | 
+            ForEach-Object { 
+                move-item -Path $_.FullName -Destination $binPath
+            }
+            $version = ((. (Join-Path $binPath "ffprobe.exe")  -v 0 -of json -show_program_version) | convertfrom-json).program_version.version
+            Write-Host "Installed ffmpeg ($version) to $binPath!" -ForegroundColor Green 
+        }
+        else {
+            throw [System.InvalidOperationException]::new("Failed to obtain the URL for nightly ffmpeg build.")
+        }
+    }
+    else {
+        throw [System.Net.WebException]::new("GitHub cannot be reached at the moment.")
     }
 }
 function New-PSLiveRecording {
@@ -142,6 +284,9 @@ function Invoke-Streamlink {
     
     begin {
         $sl = Get-Streamlink
+        if ($null -eq $sl) {
+            throw [System.IO.FileNotFoundException]::new("Streamlink not found. Please configure the required dependencies via Install-PSLiveDependencies.")
+        }
     }
     
     process {
@@ -210,12 +355,24 @@ function Convert-CookieJarToArgs($Path) {
 }
 function Get-CommonArgs {
     $ffmpeg = Get-FFMpeg
+    if ($null -eq $ffmpeg) {
+        throw [System.IO.FileNotFoundException]::new("ffmpeg not found. Please configure the required dependencies via Install-PSLiveDependencies.")
+    }
     return "--ffmpeg-ffmpeg", "`"$ffmpeg`"", "--http-timeout", 5, "--stream-timeout", 5, "--http-stream-timeout", 5, "--default-stream", "best", "--force"
 }
 function Get-FFMpeg {
     $sl = Get-Command ffmpeg -ErrorAction SilentlyContinue -CommandType Application
     if ($null -eq $sl) {
-        throw [System.IO.FileNotFoundException]::new("ffmpeg is not available. Please ensure ffmpeg has already been downloaded and configured.")
+        if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+            $installReg = Get-ChildItem Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\ | Get-ItemProperty | Where-Object { $_.DisplayName -match "streamlink" }
+            if ($installReg.InstallLocation) {
+                $src = get-childitem -path $installreg.InstallLocation -filter ffmpeg.exe -recurse
+                if ($src) {
+                    return $src.FullName
+                }
+            }
+        }
+        return $null
     }
     else {
         return $sl.Source
@@ -225,10 +382,10 @@ function Get-FFMpeg {
 function Get-Streamlink {
     $sl = Get-Command streamlink -ErrorAction SilentlyContinue -CommandType Application
     if ($null -eq $sl) {
-        throw [System.IO.FileNotFoundException]::new("Streamlink is not available. Please ensure streamlink has already been downloaded and configured.")
+        return $null
     }
     else {
         return $sl.Source
     }
 }
-Export-ModuleMember -Function New-PSLiveRecording, Get-StreamAvailability, Invoke-Streamlink, Invoke-PSLiveWatchdog
+Export-ModuleMember -Function New-PSLiveRecording, Get-StreamAvailability, Invoke-Streamlink, Invoke-PSLiveWatchdog, Install-PSLiveDependencies
