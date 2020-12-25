@@ -1,0 +1,14 @@
+environment:
+  NuGetAPIKey:
+    secure: FLpXoL2sLMfpfmNXW9s5nL3xOavfS7ftff/2ZslUa2h3rftY1xI0ie00Zr9lnvNM
+version: 1.0.{build}
+image: Visual Studio 2019
+init:
+- pwsh: Install-Module BuildHelpers
+build_script:
+- pwsh: >-
+    Set-BuildEnvironment
+    $Version = Get-NextNugetPackageVersion -Name $env:BHProjectName
+    Update-Metadata -Path $env:BHPSModuleManifest -PropertyName ModuleVersion -Value $Version
+deploy_script:
+- pwsh: Publish-Module -Path $env:APPVEYOR_BUILD_FOLDER -Repository "https://github.com/Still34/PSLive-DL" -NuGetApiKey $env:NuGetAPIKey
