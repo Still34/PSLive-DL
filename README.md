@@ -1,11 +1,10 @@
 # PSLive-DL
 
-<h1 align="center">Welcome to pslive-dl 👋</h1>
+<h1 align="center">Automatic Stream Recording!</h1>
 <p>
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.0-blue.svg?cacheSeconds=2592000" />
-  <a href="#" target="_blank">
-    <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" />
-  </a>
+  ![PowerShell Gallery Version](https://img.shields.io/powershellgallery/v/pslive-dl)
+  ![AppVeyor](https://img.shields.io/appveyor/build/Still/PSLive-DL?label=pslive-dl)
+  ![GitHub](https://img.shields.io/github/license/Still34/pslive-dl)
   <a href="https://twitter.com/StillAzureH" target="_blank">
     <img alt="Twitter: StillAzureH" src="https://img.shields.io/twitter/follow/StillAzureH.svg?style=social" />
   </a>
@@ -23,13 +22,10 @@ Install-Module PSLive-DL
 
 👤 **Still Hsu**
 
-* Website: https://stillu.cc
+* Website: <https://stillu.cc>
 * Twitter: [@StillAzureH](https://twitter.com/StillAzureH)
 * Github: [@Still34](https://github.com/Still34)
 
 ## Show your support
 
 Give a ⭐️ if this project helped you!
-
-***
-_This README was generated with ❤️ by [readme-md-generator](https://github.com/kefranabg/readme-md-generator)_
