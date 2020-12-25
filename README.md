@@ -1,10 +1,12 @@
 # PSLive-DL
 
 <h1 align="center">Automatic Stream Recording!</h1>
+
+![PowerShell Gallery Version](https://img.shields.io/powershellgallery/v/pslive-dl)
+![AppVeyor](https://img.shields.io/appveyor/build/Still/PSLive-DL?label=pslive-dl)
+![GitHub](https://img.shields.io/github/license/Still34/pslive-dl)
+
 <p>
-  ![PowerShell Gallery Version](https://img.shields.io/powershellgallery/v/pslive-dl)
-  ![AppVeyor](https://img.shields.io/appveyor/build/Still/PSLive-DL?label=pslive-dl)
-  ![GitHub](https://img.shields.io/github/license/Still34/pslive-dl)
   <a href="https://twitter.com/StillAzureH" target="_blank">
     <img alt="Twitter: StillAzureH" src="https://img.shields.io/twitter/follow/StillAzureH.svg?style=social" />
   </a>
