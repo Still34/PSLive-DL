@@ -1,7 +1,7 @@
 environment:
   NuGetAPIKey:
     secure: FLpXoL2sLMfpfmNXW9s5nL3xOavfS7ftff/2ZslUa2h3rftY1xI0ie00Zr9lnvNM
-version: 1.0.{build}
+version: 1.1.{build}
 skip_non_tags: true
 image: Visual Studio 2019
 init:
