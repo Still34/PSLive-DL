@@ -214,7 +214,9 @@ function New-PSLiveRecording {
     }
     
     end {
-        Write-Verbose $result.StandardOutput
+        if ($result.StandardOutput) {
+            Write-Verbose $result.StandardOutput
+        }
     }
 }
 function Get-StreamAvailability {
@@ -272,6 +274,9 @@ function Invoke-Streamlink {
         $Json,
         [Parameter(ParameterSetName = "Record")]
         [string]
+        $OutputDirectory = "$env:USERPROFILE\.pslive\",
+        [Parameter(ParameterSetName = "Record")]
+        [string]
         $OutputName,
         [Parameter(ParameterSetName = "Record")]
         [ValidateSet('mkv', 'mp4')]
@@ -286,57 +291,73 @@ function Invoke-Streamlink {
         if ($null -eq $sl) {
             throw [System.IO.FileNotFoundException]::new("Streamlink not found. Please configure the required dependencies via Install-PSLiveDependencies.")
         }
+        $OutputName = [System.IO.Path]::GetFileName($OutputName)
+        if (!(Test-Path $OutputDirectory)) {
+            $OutputDirectory = (New-Item -Path $OutputDirectory -ItemType Directory -Force).FullName
+        }
     }
     
     process {
-        $psi = [System.Diagnostics.ProcessStartInfo]::new($sl)
-        $psi.RedirectStandardError = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.Arguments += (Get-CommonArgs)
-        $psi.Arguments += " --url $Url"
+        $slArgs += Get-CommonArgs
+        $slArgs += " --url $Url"
         if ($Json) {
-            $psi.Arguments += " --json"
-        }
-        else {
-            if (-not $OutputName) {
-                $OutputName = [System.DateTimeOffset]::Now.ToString("yyyy-MM-dd_HH.mm.ss-") + [System.IO.Path]::GetFileName($Url)
-            }
-            $OutputName = Repair-Filename $OutputName
-            $psi.Arguments += " --output $OutputName." + $Format
-            if ($Format) {
-                $psi.Arguments += " --ffmpeg-fout $Format"
-            }
-        }
-        if (!([string]::IsNullOrEmpty($CookieJar))) {
-            $cookieArgs = Convert-CookieJarToArgs $CookieJar
-            $psi.Arguments += " $($cookieArgs)"
-        }
-        $p = [System.Diagnostics.Process]::new()
-        $p.StartInfo = $psi
-        $p.Start() > $null
-        if ($Json) {
+            $slArgs += " --json"
+            $psi = [System.Diagnostics.ProcessStartInfo]::new($sl)
+            $psi.Arguments = $slArgs
+            $psi.RedirectStandardError = $true
+            $psi.RedirectStandardOutput = $true
+            $p = [System.Diagnostics.Process]::new()
+            $p.StartInfo = $psi
+            $p.Start() > $null
             $stdout = $p.StandardOutput.ReadToEnd()
             $stderr = $p.StandardError.ReadToEnd()
             $p.WaitForExit()
         }
         else {
-            $activity = "Recording $url since $([DateTime]::Now)..."
-            $i = 0
-            while (!$p.HasExited) {
-                if ($i -ge 100) {
-                    $i = 0
-                }
-                $i++
-                Write-Progress -Activity $activity -Status "Recording..." -PercentComplete $i
-                Start-Sleep -Seconds 2
+            # prepare output file
+            if (-not $OutputName) {
+                $OutputName = [System.DateTimeOffset]::Now.ToString("yyyy-MM-dd_HH.mm.ss-") + [System.IO.Path]::GetFileName($Url)
             }
-            Write-Progress -Activity $activity -Completed
-            $stdout = $p.StandardOutput.ReadToEnd()
-            $stderr = $p.StandardError.ReadToEnd()
+            $OutputName = Repair-Filename $OutputName
+            if ([string]::IsNullOrEmpty($OutputName)) {
+                throw [InvalidOperationException]::new("Stream filename cannot be null or empty.")
+            }
+            $OutputName = "$OutputName.$Format"
+            $outputPath = Join-Path $OutputDirectory $OutputName
+            $slArgs += " --output `"$outputPath`""
+            if ($Format) {
+                $slArgs += " --ffmpeg-fout $Format"
+            }
+
+            # prepare CookieJar
+            if (!([string]::IsNullOrEmpty($CookieJar))) {
+                $cookieArgs = Convert-CookieJarToArgs $CookieJar
+                $slArgs += " $($cookieArgs)"
+            }
+            
+            $activity = "Recording $url since $([DateTime]::Now)..."
+            Write-Progress -Activity $activity -Status "Close the newly created (minimized) Streamlink window to stop recording." -PercentComplete 45
+
+            # A bit of a hack:
+            #   Spawn a new window on purpose, so the stream output can be properly terminated by the user
+            #   While we could capture CTRL+C, it is not wise to do so for long-running tasks, as we still have a remux job afterwards.
+            Start-Process $sl -ArgumentList $slArgs -Wait -WindowStyle Minimized
+
+            # Post-recording
+            if (!(Test-Path $outputPath)) {
+                throw [System.IO.FileNotFoundException]::new("Streamlink failed to create an expected output.")
+            }
+            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($OutputName)
+            $remuxedOutputPath = Join-Path $OutputDirectory "$baseName-final.$Format"
+            Write-Progress -Activity $activity -Status "Remuxing..." -PercentComplete 90
+            Start-Process -FilePath (Get-FFMpeg) -ArgumentList "-i", "`"$outputPath`"", "-c", "copy", "`"$remuxedOutputPath`"" -Wait -NoNewWindow
+            Remove-Item $outputPath -Force
+            Write-Host "Finished capture!" -ForegroundColor Green
         }
     }
     
     end {
+        Write-Progress -Activity $activity -Completed
         return [PSCustomObject]@{
             StandardOutput = $stdout
             StandardError  = $stderr
@@ -360,7 +381,7 @@ function Get-CommonArgs {
     return "--ffmpeg-ffmpeg", "`"$ffmpeg`"", "--http-timeout", 5, "--stream-timeout", 5, "--http-stream-timeout", 5, "--default-stream", "best", "--force"
 }
 function Get-FFMpeg {
-    $sl = Get-Command ffmpeg -ErrorAction SilentlyContinue -CommandType Application
+    $sl = Get-Command ffmpeg -ErrorAction SilentlyContinue -CommandType Application | Select-Object -First 1
     if ($null -eq $sl) {
         if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
             $installReg = Get-ChildItem Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\ | Get-ItemProperty | Where-Object { $_.DisplayName -match "streamlink" }
@@ -379,7 +400,7 @@ function Get-FFMpeg {
 }
 
 function Get-Streamlink {
-    $sl = Get-Command streamlink -ErrorAction SilentlyContinue -CommandType Application
+    $sl = Get-Command streamlink -ErrorAction SilentlyContinue -CommandType Application | Select-Object -First 1
     if ($null -eq $sl) {
         return $null
     }
