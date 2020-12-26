@@ -277,7 +277,6 @@ function Invoke-Streamlink {
         [ValidateSet('mkv', 'mp4')]
         [string]
         $Format = "mp4",
-        [ValidateScript( { return Test-Path $_ })]
         [string]
         $CookieJar
     )
@@ -308,7 +307,7 @@ function Invoke-Streamlink {
                 $psi.Arguments += " --ffmpeg-fout $Format"
             }
         }
-        if ($CookieJar) {
+        if (!([string]::IsNullOrEmpty($CookieJar))) {
             $cookieArgs = Convert-CookieJarToArgs $CookieJar
             $psi.Arguments += " $($cookieArgs)"
         }
