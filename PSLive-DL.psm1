@@ -304,6 +304,7 @@ function Invoke-Streamlink {
             $slArgs += " --json"
             $psi = [System.Diagnostics.ProcessStartInfo]::new($sl)
             $psi.Arguments = $slArgs
+            $psi.UseShellExecute = $false
             $psi.RedirectStandardError = $true
             $psi.RedirectStandardOutput = $true
             $p = [System.Diagnostics.Process]::new()
