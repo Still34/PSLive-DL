@@ -408,4 +408,3 @@ function Get-Streamlink {
         return $sl.Source
     }
 }
-Export-ModuleMember -Function New-PSLiveRecording, Get-StreamAvailability, Invoke-Streamlink, Invoke-PSLiveWatchdog, Install-PSLiveDependencies
